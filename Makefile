@@ -1,0 +1,9 @@
+.PHONY: lint test
+
+lint:
+	go vet ./...
+	golangci-lint run ./...
+
+test:
+	go clean -testcache
+	go test ./...
