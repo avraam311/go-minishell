@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
@@ -15,9 +16,7 @@ type App struct {
 }
 
 func New(ms *minishell.Minishell) *App {
-	return &App{
-		minishell: ms,
-	}
+	return &App{minishell: ms}
 }
 
 func (a *App) Run() {
@@ -29,14 +28,25 @@ func (a *App) Run() {
 		<-ch
 		cancel()
 	}()
+
+	scanner := bufio.NewScanner(os.Stdin)
 	wd, _ := os.Getwd()
-	fmt.Print(wd + "> ")
-	for scanner := bufio.NewScanner(os.Stdin); scanner.Scan(); fmt.Print(wd + "> ") {
-		if query := scanner.Text(); query != "\\quit" {
+
+	for {
+		fmt.Print(wd + "> ")
+		if !scanner.Scan() {
+			if err := scanner.Err(); err == io.EOF || err == nil {
+				fmt.Println("\nexit")
+				break
+			}
+
+			query := scanner.Text()
+			if query == "\\\\quit" {
+				break
+			}
+
 			a.minishell.Execute(ctx, query)
-		} else {
-			break
+			wd, _ = os.Getwd()
 		}
-		wd, _ = os.Getwd()
 	}
 }

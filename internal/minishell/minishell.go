@@ -12,8 +12,7 @@ import (
 	gops "github.com/mitchellh/go-ps"
 )
 
-type Minishell struct {
-}
+type Minishell struct{}
 
 func New() *Minishell {
 	return &Minishell{}
@@ -54,8 +53,11 @@ func (ms *Minishell) Execute(ctx context.Context, query string) {
 
 			go func() {
 				<-ctx.Done()
-				cmd.Process.Signal(syscall.SIGINT)
 				stop = true
+				err := cmd.Process.Signal(syscall.SIGINT)
+				if err != nil {
+					fmt.Println("error interrupting command:", err)
+				}
 			}()
 
 			if err != nil {
