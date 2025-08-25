@@ -3,137 +3,85 @@ package minishell
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
+
+	gops "github.com/mitchellh/go-ps"
 )
 
-type Command struct {
-	Name string
-	Args []string
-}
-
 type Minishell struct {
-	Commands []*Command
 }
 
 func New() *Minishell {
-	return &Minishell{
-		Commands: []*Command{},
-	}
+	return &Minishell{}
 }
 
-func (m *Minishell) ParseLine(line string) {
-	for _, part := range strings.Split(line, "|") {
-		fields := strings.Fields(part)
-		if len(fields) == 0 {
-			continue
-		}
-		m.Commands = append(m.Commands, &Command{Name: fields[0], Args: fields[1:]})
-	}
-}
-
-func (m *Minishell) IsBuiltin(cmd *Command) bool {
-	builtins := map[string]bool{
-		"cd":   true,
-		"pwd":  true,
-		"echo": true,
-		"kill": true,
-		"ps":   true,
-	}
-	return builtins[cmd.Name]
-}
-
-func (m *Minishell) ExecuteCmd(cmd *Command) int {
-	if m.IsBuiltin(cmd) {
-		switch cmd.Name {
-		case "cd":
-			err := m.cmdCd(cmd.Args)
-			if err != nil {
-				fmt.Println(err.Error())
-				return 1
-			}
+func (ms *Minishell) Execute(query string) {
+	commands := strings.Split(query, " | ")
+	for _, command := range commands {
+		commandSlice := strings.Split(command, " ")
+		switch commandSlice[0] {
 		case "pwd":
-			m.cmdPwd()
+			pwd()
+		case "cd":
+			cd(commandSlice[1])
 		case "echo":
-			m.cmdEcho(cmd.Args)
+			echo(commandSlice[1:])
+		case "ps":
+			ps()
 		case "kill":
-			err := m.cmdKill(cmd.Args)
+			pid, err := strconv.Atoi(commandSlice[1])
 			if err != nil {
 				fmt.Println(err.Error())
-				return 1
+				return
 			}
-		case "ps":
-			m.cmdPs()
-		default:
-			fmt.Printf("Unknown builtin command '%s'\n", cmd.Name)
-			return 1
+			kill(pid)
 		}
-		return 0
 	}
 
-	command := exec.Command(cmd.Name, cmd.Args...)
-	out, err := command.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: %s\n", cmd.Name, err.Error())
-		return 1
-	}
-	fmt.Print(string(out))
-	return 0
 }
 
-func (m *Minishell) cmdCd(args []string) error {
-	if len(args) != 1 {
-		fmt.Println("Usage: cd <directory>")
-		return nil
+func cd(dir string) {
+	if err := os.Chdir(dir); err != nil {
+		fmt.Println(err.Error())
 	}
-	dir := args[0]
-	err := os.Chdir(dir)
-	if err != nil {
-		fmt.Printf("Error changing directory to %s\n", dir)
-	}
-	return err
 }
 
-func (m *Minishell) cmdPwd() {
-	cwd, _ := os.Getwd()
-	fmt.Println(cwd)
+func pwd() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		fmt.Println(err.Error())
+		return ""
+	}
+	fmt.Println(wd)
+	return wd
 }
 
-func (m *Minishell) cmdEcho(args []string) {
-	fmt.Println(strings.Join(args, " "))
+func echo(args []string) {
+	for _, word := range args {
+		fmt.Print(word + " ")
+	}
+	fmt.Println()
 }
 
-func (m *Minishell) cmdKill(args []string) error {
-	if len(args) != 1 {
-		fmt.Println("Usage: kill <PID>")
-		return nil
+func ps() {
+	if pcs, err := gops.Processes(); err != nil {
+		fmt.Println(err.Error())
+	} else {
+		for _, pc := range pcs {
+			fmt.Println(pc.Pid(), pc.Executable())
+		}
 	}
-	pidStr := args[0]
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		fmt.Printf("Invalid PID: %v\n", pidStr)
-		return err
-	}
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		fmt.Printf("No such process with PID %d\n", pid)
-		return err
-	}
-	err = process.Signal(syscall.SIGTERM)
-	if err != nil {
-		fmt.Printf("Failed to send signal to PID %d\n", pid)
-	}
-	return err
 }
 
-func (m *Minishell) cmdPs() {
-	cmd := exec.Command("ps", "aux")
-	output, err := cmd.Output()
+func kill(pid int) {
+	p, err := os.FindProcess(pid)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err.Error())
 		return
 	}
-	fmt.Print(string(output))
+	if err := p.Kill(); err != nil {
+		fmt.Println(err.Error())
+		return
+	}
 }

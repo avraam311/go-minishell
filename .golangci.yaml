@@ -34,6 +34,8 @@ linters:
 linters-settings:
   gocyclo:
     min-complexity: 15
+  gocognit:
+    min-complexity: 35
   misspell:
     locale: en_Us.UTF-8
   goimports:
@@ -42,3 +44,4 @@ linters-settings:
     strict: true
   nestif:
     depth: 3
+    min-complexity: 7
