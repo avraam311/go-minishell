@@ -1,10 +1,13 @@
 package minishell
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 
 	gops "github.com/mitchellh/go-ps"
 )
@@ -16,9 +19,13 @@ func New() *Minishell {
 	return &Minishell{}
 }
 
-func (ms *Minishell) Execute(query string) {
+func (ms *Minishell) Execute(ctx context.Context, query string) {
+	stop := false
 	commands := strings.Split(query, " | ")
 	for _, command := range commands {
+		if stop {
+			break
+		}
 		commandSlice := strings.Split(command, " ")
 		switch commandSlice[0] {
 		case "pwd":
@@ -36,9 +43,23 @@ func (ms *Minishell) Execute(query string) {
 				return
 			}
 			kill(pid)
+		default:
+			cmd := exec.Command(commandSlice[0], commandSlice[1:]...)
+			out, err := cmd.Output()
+
+			go func() {
+				<- ctx.Done()
+				cmd.Process.Signal(syscall.SIGINT)
+				stop = true
+			}()
+
+			if err != nil {
+				fmt.Println()
+				continue
+			}
+			fmt.Print(string(out))
 		}
 	}
-
 }
 
 func cd(dir string) {
