@@ -27,6 +27,11 @@ func (ms *Minishell) Execute(ctx context.Context, query string) {
 			break
 		}
 		commandSlice := strings.Split(command, " ")
+		for i, value := range commandSlice[1:] {
+			if []rune(value)[0] == '&' {
+				commandSlice[i+1] = os.Getenv(string([]rune(value)[1:]))
+			}
+		}
 		switch commandSlice[0] {
 		case "pwd":
 			pwd()
@@ -48,7 +53,7 @@ func (ms *Minishell) Execute(ctx context.Context, query string) {
 			out, err := cmd.Output()
 
 			go func() {
-				<- ctx.Done()
+				<-ctx.Done()
 				cmd.Process.Signal(syscall.SIGINT)
 				stop = true
 			}()
