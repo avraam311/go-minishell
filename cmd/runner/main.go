@@ -39,14 +39,14 @@ func (a *App) Run() {
 				fmt.Println("\nexit")
 				break
 			}
-
-			query := scanner.Text()
-			if query == "\\\\quit" {
-				break
-			}
-
-			a.minishell.Execute(ctx, query)
-			wd, _ = os.Getwd()
 		}
+
+		query := scanner.Text()
+		if query == "\\quit" {
+			break
+		}
+
+		a.minishell.Execute(ctx, query)
+		wd, _ = os.Getwd()
 	}
 }

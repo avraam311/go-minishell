@@ -112,4 +112,5 @@ func kill(pid int) {
 		fmt.Println(err.Error())
 		return
 	}
+	fmt.Println("killed")
 }
