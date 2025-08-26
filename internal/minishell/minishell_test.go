@@ -44,7 +44,10 @@ func TestPwd(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		os.Chdir("/home/ibragim/myProjects/wb-tech/go-minishell/internal/minishell")
+		err := os.Chdir("/home/ibragim/myProjects/wb-tech/go-minishell/internal/minishell")
+		if err != nil {
+			t.Fatal(err)
+		}
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			res := pwd()
