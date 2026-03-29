@@ -3,11 +3,12 @@ package minishell
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync"
 
 	gops "github.com/mitchellh/go-ps"
 )
@@ -19,53 +20,132 @@ func New() *Minishell {
 }
 
 func (ms *Minishell) Execute(ctx context.Context, query string) {
-	stop := false
-	commands := strings.Split(query, " | ")
-	for _, command := range commands {
-		if stop {
-			break
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return
+	}
+	parts := strings.Split(query, "|")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	if len(parts) == 1 {
+		ms.executeSingle(ctx, parts[0])
+		return
+	}
+	ms.executePipe(parts)
+}
+
+func (ms *Minishell) executeSingle(ctx context.Context, command string) {
+	commandSlice := strings.Split(command, " ")
+	if len(commandSlice) == 0 {
+		return
+	}
+	for i := 1; i < len(commandSlice); i++ {
+		value := commandSlice[i]
+		if len(value) > 0 && []rune(value)[0] == '&' {
+			commandSlice[i] = os.Getenv(string([]rune(value)[1:]))
 		}
-		commandSlice := strings.Split(command, " ")
-		for i, value := range commandSlice[1:] {
-			if []rune(value)[0] == '&' {
-				commandSlice[i+1] = os.Getenv(string([]rune(value)[1:]))
-			}
-		}
-		switch commandSlice[0] {
-		case "pwd":
-			pwd()
-		case "cd":
+	}
+	cmdName := commandSlice[0]
+	switch cmdName {
+	case "pwd":
+		pwd()
+	case "cd":
+		if len(commandSlice) > 1 {
 			cd(commandSlice[1])
-		case "echo":
-			echo(commandSlice[1:])
-		case "ps":
-			ps()
-		case "kill":
-			pid, err := strconv.Atoi(commandSlice[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				return
-			}
-			kill(pid)
-		default:
-			cmd := exec.Command(commandSlice[0], commandSlice[1:]...)
-			out, err := cmd.Output()
-
-			go func() {
-				<-ctx.Done()
-				stop = true
-				err := cmd.Process.Signal(syscall.SIGINT)
-				if err != nil {
-					fmt.Println("error interrupting command:", err)
-				}
-			}()
-
-			if err != nil {
-				fmt.Println()
-				continue
-			}
-			fmt.Print(string(out))
 		}
+	case "echo":
+		echo(commandSlice[1:])
+	case "ps":
+		ps()
+	case "kill":
+		if len(commandSlice) > 1 {
+			pid, err := strconv.Atoi(commandSlice[1])
+			if err == nil {
+				kill(pid)
+			} else {
+				fmt.Println(err.Error())
+			}
+		}
+	default:
+		c := exec.CommandContext(ctx, commandSlice[0], commandSlice[1:]...)
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
+			return
+		}
+	}
+}
+
+func (ms *Minishell) executePipe(parts []string) {
+	numCmds := 0
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			numCmds++
+		}
+	}
+	if numCmds < 2 {
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Add(numCmds)
+
+	rpipe := make([]io.ReadCloser, numCmds)
+	wpipe := make([]io.WriteCloser, numCmds-1)
+	for i := 0; i < numCmds-1; i++ {
+		var err error
+		rpipe[i+1], wpipe[i], err = os.Pipe()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "pipe failed:", err)
+			return
+		}
+	}
+
+	cmdIdx := 0
+	cmds := make([]*exec.Cmd, numCmds)
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		commandSlice := strings.Split(part, " ")
+		if len(commandSlice) == 0 {
+			continue
+		}
+		cmd := exec.Command(commandSlice[0], commandSlice[1:]...)
+		cmds[cmdIdx] = cmd
+		if cmdIdx == 0 {
+			cmd.Stdin = nil
+		} else {
+			cmd.Stdin = rpipe[cmdIdx]
+		}
+		if cmdIdx < numCmds-1 {
+			cmd.Stdout = wpipe[cmdIdx]
+		} else {
+			cmd.Stdout = os.Stdout
+		}
+		cmd.Stderr = os.Stderr
+
+		go func(idx int, c *exec.Cmd) {
+			defer wg.Done()
+			if err := c.Start(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			if idx < numCmds-1 {
+				_ = wpipe[idx].Close()
+			}
+			_ = c.Wait()
+		}(cmdIdx, cmd)
+		cmdIdx++
+	}
+
+	wg.Wait()
+	for _, w := range wpipe {
+		_ = w.Close()
+	}
+	for i := 1; i < numCmds; i++ {
+		_ = rpipe[i].Close()
 	}
 }
 
@@ -75,14 +155,13 @@ func cd(dir string) {
 	}
 }
 
-func pwd() string {
+func pwd() {
 	wd, err := os.Getwd()
 	if err != nil {
 		fmt.Println(err.Error())
-		return ""
+		return
 	}
 	fmt.Println(wd)
-	return wd
 }
 
 func echo(args []string) {

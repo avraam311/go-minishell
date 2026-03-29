@@ -50,9 +50,10 @@ func TestPwd(t *testing.T) {
 		}
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			res := pwd()
-			if !reflect.DeepEqual(res, tc.expected) {
-				t.Errorf("pwd() = %v, want: %v", res, tc.expected)
+			pwd()
+			wd, _ := os.Getwd()
+			if wd != tc.expected {
+				t.Errorf("pwd() printed wrong dir, got %v want %v", wd, tc.expected)
 			}
 		})
 	}

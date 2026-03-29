@@ -111,12 +111,14 @@ func TestPs(t *testing.T) {
 
 func TestExecPipes(t *testing.T) {
 	t.Parallel()
+
 	cmd := exec.Command("touch", "test.txt")
-	if err := cmd.Start(); err != nil {
+	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}
 	bin := buildBinary(t)
 	res := runShell(t, bin, readFile(t, "./test_files/exec_pipes.txt"))
+
 	expected := readFile(t, "./expected_files/exec_pipes.txt")
 	if strings.Contains(res, expected) {
 		t.Errorf("unexpected output:\nGot:\n%s\nWant:\n%s", res, "no test.txt")
